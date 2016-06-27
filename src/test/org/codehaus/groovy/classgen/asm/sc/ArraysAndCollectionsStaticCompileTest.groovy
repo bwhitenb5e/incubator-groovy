@@ -64,7 +64,7 @@ class ArraysAndCollectionsStaticCompileTest extends ArraysAndCollectionsSTCTest 
     // GROOVY-5988
     void testMapArraySetPropertyAssignment() {
         assertScript '''
-            Map<String, String> props(Object p) {
+            Map<String, Object> props(Object p) {
                 Map<String, Object> props = [:]
 
                 for(String property in p.properties.keySet()){
@@ -78,6 +78,54 @@ class ArraysAndCollectionsStaticCompileTest extends ArraysAndCollectionsSTCTest 
             assert map['class'] == 'TEST'
             assert map['bytes'] == 'TEST'
         '''
+    }
+
+    // GROOVY-7656
+    void testSpreadSafeMethodCallsOnListLiteralShouldNotCreateListTwice() {
+        try {
+            assertScript '''
+                class Foo {
+                    static void test() {
+                        def list = [1, 2]
+                        def lengths = [list << 3]*.size()
+                        assert lengths == [3]
+                        assert list == [1, 2, 3]
+                    }
+                }
+                Foo.test()
+            '''
+        } finally {
+            assert astTrees['Foo'][1].count('ScriptBytecodeAdapter.createList') == 4
+        }
+    }
+
+    //GROOVY-7442
+    void testSpreadDotOperatorWithinAssert() {
+        assertScript '''
+            def myMethod(String a, String b) {
+                assert [a, b]*.size() == [5, 5]
+            }
+
+            myMethod('hello', 'world')
+        '''
+    }
+
+    //GROOVY-7688
+    void testSpreadSafeMethodCallReceiversWithSideEffectsShouldNotBeVisitedTwice() {
+        try {
+            assertScript '''
+                class Foo {
+                    static void test() {
+                        def list = ['a', 'b']
+                        def lengths = list.toList()*.length()
+                        assert lengths == [1, 1]
+                    }
+                }
+                Foo.test()
+            '''
+        } finally {
+            assert astTrees['Foo'][1].count('DefaultGroovyMethods.toList') == 1
+        }
     }
 
     @Override

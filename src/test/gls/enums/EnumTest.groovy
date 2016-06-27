@@ -556,6 +556,42 @@ class EnumTest extends CompilableTestSupport {
             println Test.TEST1.info == [1,2,3]
         '''
     }
+
+    void testLastEnumValueIsAnnotatedWithoutTrailingComma_GROOVY_7342() {
+        assertScript '''
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Target;
+
+            @Target([ElementType.FIELD])
+            @interface Fooann {
+            }
+
+            enum Foonum {
+                @Fooann
+                X,
+                @Fooann
+                Y
+            }
+
+            println Foonum.X
+            println Foonum.Y
+        '''
+    }
+
+    void testEnumWithPropertiesAndDanglingComma_GROOVY_7773() {
+        assertScript '''
+            enum UsState {
+                ID('Idaho'),
+                IL('Illinois'),
+                IN('Indiana'),
+                ;
+                UsState( String value ) { this.value = value }
+                private final String value
+                String toString() { value }
+            }
+            assert UsState.ID.toString() == 'Idaho'
+        '''
+    }
 }
 
 enum UsCoin {

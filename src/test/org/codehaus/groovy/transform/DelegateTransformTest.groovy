@@ -694,6 +694,66 @@ assert foo.dm.x == '123'
             assert f.internalDelegate == ['bar', 'baz']
         '''
     }
+
+    // GROOVY-6454
+    void testMethodsWithInternalNameShouldNotBeDelegatedTo() {
+        assertScript '''
+            class HasMethodWithInternalName {
+                void $() {
+                }
+            }
+
+            class DelegatesToHasMethodWithInternalName {
+                @Delegate
+                HasMethodWithInternalName hasMethodWithInternalName
+            }
+
+            assert !new DelegatesToHasMethodWithInternalName().respondsTo('$')
+        '''
+    }
+
+    // GROOVY-6454
+    void testMethodsWithInternalNameShouldBeDelegatedToIfRequested() {
+        assertScript '''
+            interface HasMethodWithInternalName {
+                void $()
+            }
+
+            class DelegatesToHasMethodWithInternalName {
+                @Delegate(allNames = true)
+                HasMethodWithInternalName hasMethodWithInternalName
+            }
+
+            assert new DelegatesToHasMethodWithInternalName().respondsTo('$')
+        '''
+    }
+
+    // GROOVY-6454
+    void testProperitesWithInternalNameShouldBeDelegatedToIfRequested() {
+        assertScript '''
+            class HasPropertyWithInternalName {
+                def $
+            }
+
+            class DelegatesToHasPropertyWithInternalName {
+                @Delegate(allNames = true)
+                HasPropertyWithInternalName hasPropertyWithInternalName
+            }
+
+            def delegates = new DelegatesToHasPropertyWithInternalName()
+            assert delegates.respondsTo('get$')
+            assert delegates.respondsTo('set$')
+        '''
+    }
+
+    void testDelegateToGetterMethod() {
+        // given:
+        def delegate = { new DelegateFooImpl() }
+        // when:
+        def foo = new FooToMethod(delegate)
+        // then:
+        assert foo.foo() == delegate().foo()
+    }
 }
 
 interface DelegateFoo {
@@ -731,6 +791,17 @@ class DelegateBarForcingDeprecated {
 
 class Foo4244 {
     @Delegate Bar4244 bar = new Bar4244()
+}
+
+class FooToMethod {
+    private final Closure<DelegateFoo> strategy
+
+    FooToMethod(Closure<DelegateFoo> strategy) {
+        this.strategy = strategy
+    }
+
+    @Delegate
+    DelegateFoo getStrategy() { strategy() }
 }
 
 class Bar4244 {

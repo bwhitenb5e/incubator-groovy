@@ -210,7 +210,7 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         }
     }
 
-    private List<GroovySourceAST> findTypeNames(GroovySourceAST t) {
+    private static List<GroovySourceAST> findTypeNames(GroovySourceAST t) {
         List<GroovySourceAST> types = new ArrayList<GroovySourceAST>();
         for (AST child = t.getFirstChild(); child != null; child = child.getNextSibling()) {
             GroovySourceAST groovySourceAST = (GroovySourceAST) child;
@@ -266,6 +266,68 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         }
     }
 
+    private void processPropertiesFromGetterSetter(SimpleGroovyMethodDoc currentMethodDoc) {
+        String methodName = currentMethodDoc.name();
+        int len = methodName.length();
+        String prefix = null;
+        String propName = null;
+        if (len > 3 && methodName.startsWith("get")) {
+            prefix = "get";
+            propName = methodName.substring(3);
+        } else if (len > 3 && methodName.startsWith("set")) {
+            prefix = "set";
+            propName = methodName.substring(3);
+        } else if (len > 2 && methodName.startsWith("is")) {
+            prefix = "is";
+            propName = methodName.substring(2);
+        } else {
+            // Not a (get/set/is) method that contains a property name
+            return;
+        }
+
+        SimpleGroovyClassDoc classDoc = getCurrentClassDoc();
+        // TODO: not sure why but groovy.ui.view.BasicContentPane#buildOutputArea classDoc is null
+        if (classDoc == null) {
+            return;
+        }
+        GroovyMethodDoc methods[] = classDoc.methods();
+
+        //find expected method name
+        String expectedMethodName = null;
+        if ("set".equals(prefix) && (currentMethodDoc.parameters().length >= 1 && !currentMethodDoc.parameters()[0].typeName().equals("boolean"))) {
+            expectedMethodName = "get" + propName;
+        } else if ("get".equals(prefix) && !currentMethodDoc.returnType().typeName().equals("boolean")) {
+            expectedMethodName = "set" + propName;
+        } else if ("is".equals(prefix)) {
+            expectedMethodName = "set" + propName;
+        } else {
+            expectedMethodName = "is" + propName;
+        }
+
+        for (GroovyMethodDoc methodDoc : methods) {
+            if (methodDoc.name().equals(expectedMethodName)) {
+
+                //extract the field name
+                String fieldName = propName.substring(0, 1).toLowerCase() + propName.substring(1);
+                SimpleGroovyFieldDoc currentFieldDoc = new SimpleGroovyFieldDoc(fieldName, classDoc);
+
+                //find the type of the field; if it's a setter, need to get the type of the params
+                if(expectedMethodName.startsWith("set") && methodDoc.parameters().length >= 1) {
+                    String typeName = methodDoc.parameters()[0].typeName();
+                    currentFieldDoc.setType(new SimpleGroovyType(typeName));
+                } else {
+                    //if it's not setter, get the type info of the return type of the get* method
+                    currentFieldDoc.setType(methodDoc.returnType());
+                }
+
+                if (methodDoc.isPublic() && currentMethodDoc.isPublic()) {
+                    classDoc.addProperty(currentFieldDoc);
+                    break;
+                }
+            }
+        }
+    }
+
     private SimpleGroovyMethodDoc createMethod(GroovySourceAST t, SimpleGroovyClassDoc currentClassDoc) {
         String methodName = getIdentFor(t);
         SimpleGroovyMethodDoc currentMethodDoc = new SimpleGroovyMethodDoc(methodName, currentClassDoc);
@@ -274,10 +336,11 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         currentMethodDoc.setReturnType(new SimpleGroovyType(getTypeOrDefault(t)));
         addParametersTo(t, currentMethodDoc);
         processAnnotations(t, currentMethodDoc);
+        processPropertiesFromGetterSetter(currentMethodDoc);
         return currentMethodDoc;
     }
 
-    private GroovyMethodDoc createMainMethod(SimpleGroovyClassDoc currentClassDoc) {
+    private static GroovyMethodDoc createMainMethod(SimpleGroovyClassDoc currentClassDoc) {
         SimpleGroovyMethodDoc mainMethod = new SimpleGroovyMethodDoc("main", currentClassDoc);
         mainMethod.setPublic(true);
         mainMethod.setStatic(true);
@@ -402,13 +465,13 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         return getCurrentClassDoc() != null;
     }
 
-    private boolean isTopLevelConstruct(GroovySourceAST node) {
+    private static boolean isTopLevelConstruct(GroovySourceAST node) {
         if (node == null) return false;
         int type = node.getType();
         return type == CLASS_DEF || type == INTERFACE_DEF || type == TRAIT_DEF || type == ANNOTATION_DEF || type == ENUM_DEF;
     }
 
-    private void adjustForAutomaticEnumMethods(SimpleGroovyClassDoc currentClassDoc) {
+    private static void adjustForAutomaticEnumMethods(SimpleGroovyClassDoc currentClassDoc) {
         SimpleGroovyMethodDoc valueOf = new SimpleGroovyMethodDoc("valueOf", currentClassDoc);
         valueOf.setRawCommentText("Returns the enum constant of this type with the specified name.");
         SimpleGroovyParameter parameter = new SimpleGroovyParameter("name");
@@ -427,7 +490,7 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         return recurseDownImportBranch(getImportPathDotType(t));
     }
 
-    private GroovySourceAST getImportPathDotType(GroovySourceAST t) {
+    private static GroovySourceAST getImportPathDotType(GroovySourceAST t) {
         GroovySourceAST child = t.childOfType(DOT);
         if (child == null) {
             child = t.childOfType(IDENT);
@@ -630,14 +693,14 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         return result;
     }
 
-    private boolean isMajorType(GroovySourceAST t) {
+    private static boolean isMajorType(GroovySourceAST t) {
         if (t == null) return false;
         int tt = t.getType();
         return tt == CLASS_DEF || tt == TRAIT_DEF || tt == INTERFACE_DEF || tt == METHOD_DEF || tt == ANNOTATION_DEF || tt == ENUM_DEF ||
                 tt == VARIABLE_DEF || tt == ANNOTATION_FIELD_DEF || tt == ENUM_CONSTANT_DEF || tt == CTOR_IDENT;
     }
 
-    private String getText(GroovySourceAST node) {
+    private static String getText(GroovySourceAST node) {
         String returnValue = null;
         if (node != null) {
             returnValue = node.getText();
@@ -749,10 +812,7 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
                 StringBuilder dot = new StringBuilder();
                 GroovySourceAST dotChild = (GroovySourceAST) node.getFirstChild();
                 while (dotChild != null) {
-                    if (dotChild.getType() == IDENT) {
-                        if (dot.length() > 0) dot.append("/");
-                        dot.append(getAsTextCurrent(dotChild, defaultText));
-                    } else if (dotChild.getType() == DOT) {
+                    if (dotChild.getType() == IDENT || dotChild.getType() == DOT) {
                         if (dot.length() > 0) dot.append("/");
                         dot.append(getAsTextCurrent(dotChild, defaultText));
                     } else if (dotChild.getType() == TYPE_ARGUMENTS) {
@@ -890,7 +950,7 @@ public class SimpleGroovyClassDocAssembler extends VisitorAdapter implements Gro
         return result;
     }
 
-    private String getIdentFor(GroovySourceAST gpn) {
+    private static String getIdentFor(GroovySourceAST gpn) {
         return gpn.childOfType(IDENT).getText();
     }
 

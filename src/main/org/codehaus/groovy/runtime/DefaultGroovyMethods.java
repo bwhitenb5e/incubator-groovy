@@ -26,6 +26,7 @@ import groovy.transform.stc.FirstParam;
 import groovy.transform.stc.FromString;
 import groovy.transform.stc.MapEntryOrKeyValue;
 import groovy.transform.stc.SimpleType;
+import groovy.util.BufferedIterator;
 import groovy.util.ClosureComparator;
 import groovy.util.GroovyCollections;
 import groovy.util.MapEntry;
@@ -52,6 +53,8 @@ import org.codehaus.groovy.runtime.typehandling.NumberMath;
 import org.codehaus.groovy.tools.RootLoader;
 import org.codehaus.groovy.transform.trait.Traits;
 import org.codehaus.groovy.util.ArrayIterator;
+import org.codehaus.groovy.util.ListBufferedIterator;
+import org.codehaus.groovy.util.IteratorBufferedIterator;
 
 import java.io.*;
 import java.lang.reflect.Array;
@@ -61,6 +64,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -170,6 +174,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
 //            NioGroovyMethods.class
     };
     private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
+    private static final NumberAwareComparator<Comparable> COMPARABLE_NUMBER_AWARE_COMPARATOR = new NumberAwareComparator<Comparable>();
 
     /**
      * Identity check. Since == is overridden in Groovy with the meaning of equality
@@ -205,7 +210,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * Any method invoked inside the closure will first be invoked on the
      * self reference. For instance, the following method calls to the append()
      * method are invoked on the StringBuilder instance:
-     * <pre>
+     * <pre class="groovyTestCase">
      * def b = new StringBuilder().with {
      *   append('foo')
      *   append('bar')
@@ -372,7 +377,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
 
     /**
      * Convenience method that calls {@link #getMetaPropertyValues(java.lang.Object)}(self)
-     * and provides the data in form of simple key/value pairs, i.e.&nsbp;without
+     * and provides the data in form of simple key/value pairs, i.e. without
      * type() information.
      *
      * @param self the receiver object
@@ -1115,8 +1120,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * @since 1.6.0
      */
     public static int numberAwareCompareTo(Comparable self, Comparable other) {
-        NumberAwareComparator<Comparable> numberAwareComparator = new NumberAwareComparator<Comparable>();
-        return numberAwareComparator.compare(self, other);
+        return COMPARABLE_NUMBER_AWARE_COMPARATOR.compare(self, other);
     }
 
     /**
@@ -2187,7 +2191,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     }
 
     /**
-     * Used to determine if the given predicate closure is valid (i.e.&nsbp;returns
+     * Used to determine if the given predicate closure is valid (i.e. returns
      * <code>true</code> for all items in this data structure).
      * A simple example for a list:
      * <pre>def list = [3,4,5]
@@ -2210,7 +2214,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     }
 
     /**
-     * Used to determine if the given predicate closure is valid (i.e.&nsbp;returns
+     * Used to determine if the given predicate closure is valid (i.e. returns
      * <code>true</code> for all items in this iterator).
      * A simple example for a list:
      * <pre>def list = [3,4,5]
@@ -2233,7 +2237,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     }
 
     /**
-     * Used to determine if the given predicate closure is valid (i.e.&nsbp;returns
+     * Used to determine if the given predicate closure is valid (i.e. returns
      * <code>true</code> for all items in this iterable).
      * A simple example for a list:
      * <pre>def list = [3,4,5]
@@ -3051,7 +3055,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     public static <T> List<List<T>> collate(Iterable<T> self, int size, int step, boolean keepRemainder) {
         List<T> selfList = asList(self);
         List<List<T>> answer = new ArrayList<List<T>>();
-        if (size <= 0 || selfList.size() == 0) {
+        if (size <= 0 || selfList.isEmpty()) {
             answer.add(selfList);
         } else {
             for (int pos = 0; pos < selfList.size() && pos > -1; pos += step) {
@@ -3785,8 +3789,14 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
         } else if (newEntry instanceof List) {
             List list = (List) newEntry;
             // def (key, value) == list
-            Object key = list.size() == 0 ? null : list.get(0);
+            Object key = list.isEmpty() ? null : list.get(0);
             Object value = list.size() <= 1 ? null : list.get(1);
+            leftShift(result, new MapEntry(key, value));
+        } else if (newEntry.getClass().isArray()) {
+            Object[] array = (Object[]) newEntry;
+            // def (key, value) == array.toList()
+            Object key = array.length == 0 ? null : array[0];
+            Object value = array.length <= 1 ? null : array[1];
             leftShift(result, new MapEntry(key, value));
         } else {
             // TODO: enforce stricter behavior?
@@ -4372,6 +4382,10 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * that are matched according to the specified closure condition.  In other words,
      * removes from this collection all of its elements that don't match.
      *
+     * <pre class="groovyTestCase">def list = ['a', 'b']
+     * list.retainAll { it == 'b' }
+     * assert list == ['b']</pre>
+     *
      * See also <code>findAll</code> and <code>grep</code> when wanting to produce a new list
      * containing items which match some criteria but leaving the original collection unchanged.
      *
@@ -4396,11 +4410,48 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     }
 
     /**
+     * Modifies this map so that it retains only its elements that are matched
+     * according to the specified closure condition.  In other words, removes from
+     * this map all of its elements that don't match. If the closure takes one
+     * parameter then it will be passed the <code>Map.Entry</code>. Otherwise the closure should
+     * take two parameters, which will be the key and the value.
+     *
+     * <pre class="groovyTestCase">def map = [a:1, b:2]
+     * map.retainAll { k,v -> k == 'b' }
+     * assert map == [b:2]</pre>
+     *
+     * See also <code>findAll</code> when wanting to produce a new map containing items
+     * which match some criteria but leaving the original map unchanged.
+     *
+     * @param self a Map to be modified
+     * @param condition a 1 or 2 arg Closure condition applying on the entries
+     * @return <tt>true</tt> if this map changed as a result of the call
+     * @since 2.5
+     */
+    public static <K, V> boolean retainAll(Map<K, V> self, @ClosureParams(MapEntryOrKeyValue.class) Closure condition) {
+        Iterator<Map.Entry<K, V>> iter = self.entrySet().iterator();
+        BooleanClosureWrapper bcw = new BooleanClosureWrapper(condition);
+        boolean result = false;
+        while (iter.hasNext()) {
+            Map.Entry<K, V> entry = iter.next();
+            if (!bcw.callForMap(entry)) {
+                iter.remove();
+                result = true;
+            }
+        }
+        return result;
+    }
+
+    /**
      * Modifies this collection by removing the elements that are matched according
      * to the specified closure condition.
      *
+     * <pre class="groovyTestCase">def list = ['a', 'b']
+     * list.removeAll { it == 'b' }
+     * assert list == ['a']</pre>
+     *
      * See also <code>findAll</code> and <code>grep</code> when wanting to produce a new list
-     * containing items which don't match some criteria while leaving the original collection unchanged.
+     * containing items which match some criteria but leaving the original collection unchanged.
      *
      * @param  self a Collection to be modified
      * @param  condition a closure condition
@@ -4415,6 +4466,38 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
         while (iter.hasNext()) {
             Object value = iter.next();
             if (bcw.call(value)) {
+                iter.remove();
+                result = true;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Modifies this map by removing the elements that are matched according to the
+     * specified closure condition. If the closure takes one parameter then it will be
+     * passed the <code>Map.Entry</code>. Otherwise the closure should take two parameters, which
+     * will be the key and the value.
+     *
+     * <pre class="groovyTestCase">def map = [a:1, b:2]
+     * map.removeAll { k,v -> k == 'b' }
+     * assert map == [a:1]</pre>
+     *
+     * See also <code>findAll</code> when wanting to produce a new map containing items
+     * which match some criteria but leaving the original map unchanged.
+     *
+     * @param self a Map to be modified
+     * @param condition a 1 or 2 arg Closure condition applying on the entries
+     * @return <tt>true</tt> if this map changed as a result of the call
+     * @since 2.5
+     */
+    public static <K, V> boolean removeAll(Map<K, V> self, @ClosureParams(MapEntryOrKeyValue.class) Closure condition) {
+        Iterator<Map.Entry<K, V>> iter = self.entrySet().iterator();
+        BooleanClosureWrapper bcw = new BooleanClosureWrapper(condition);
+        boolean result = false;
+        while (iter.hasNext()) {
+            Map.Entry<K, V> entry = iter.next();
+            if (bcw.callForMap(entry)) {
                 iter.remove();
                 result = true;
             }
@@ -6803,6 +6886,25 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     public static int size(Object[] self) {
         return self.length;
     }
+
+    /**
+     * Check whether an <code>Iterable</code> has elements
+     * <pre class="groovyTestCase">
+     * def items = [1]
+     * def iterable = { [ hasNext:{ !items.isEmpty() }, next:{ items.pop() } ] as Iterator } as Iterable
+     * assert !iterable.isEmpty()
+     * iterable.iterator().next()
+     * assert iterable.isEmpty()
+     * </pre>
+     *
+     * @param self an Iterable
+     * @return true if the iterable has no elements, false otherwise
+     * @since 2.5.0
+     */
+    public static boolean isEmpty(Iterable self) {
+        return !self.iterator().hasNext();
+    }
+
 
     /**
      * Support the range subscript operator for a List.
@@ -10606,7 +10708,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * Converts the given collection to another type. A default concrete
      * type is used for List, Set, or SortedSet. If the given type has
      * a constructor taking a collection, that is used. Otherwise, the
-     * call is deferred to {link #asType(Object,Class)}.  If this
+     * call is deferred to {@link #asType(Object,Class)}.  If this
      * collection is already of the given type, the same instance is
      * returned.
      *
@@ -10673,7 +10775,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     /**
      * Converts the given array to either a List, Set, or
      * SortedSet.  If the given class is something else, the
-     * call is deferred to {link #asType(Object,Class)}.
+     * call is deferred to {@link #asType(Object,Class)}.
      *
      * @param ary   an array
      * @param clazz the desired class
@@ -11285,6 +11387,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     /**
      * Create a Collection composed of the intersection of both collections.  Any
      * elements that exist in both collections are added to the resultant collection.
+     * For collection of custom objects; objects should implement java.lang.Comparable  
      * <pre class="groovyTestCase">assert [4,5] == [1,2,3,4,5].intersect([4,5,6,7,8])</pre>
      *
      * @param left  a Collection
@@ -11320,6 +11423,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     /**
      * Create a Collection composed of the intersection of both iterables.  Any
      * elements that exist in both iterables are added to the resultant collection.
+     * For collection of custom objects; objects should implement java.lang.Comparable  
      * <pre class="groovyTestCase">assert [4,5] == [1,2,3,4,5].intersect([4,5,6,7,8])</pre>
      *
      * @param left  an Iterable
@@ -11386,7 +11490,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      */
     public static <K,V> Map<K,V> intersect(Map<K,V> left, Map<K,V> right) {
         final Map<K,V> ansMap = createSimilarMap(left);
-        if (right != null && right.size() > 0) {
+        if (right != null && !right.isEmpty()) {
             for (Map.Entry<K, V> e1 : left.entrySet()) {
                 for (Map.Entry<K, V> e2 : right.entrySet()) {
                     if (DefaultTypeTransformation.compareEqual(e1, e2)) {
@@ -11621,7 +11725,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
             if (!found) return false;
             otherItems.remove(foundItem);
         }
-        return otherItems.size() == 0;
+        return otherItems.isEmpty();
     }
 
     /**
@@ -11808,7 +11912,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      */
     public static <T> Collection<T> minus(Collection<T> self, Collection<?> removeMe) {
         Collection<T> ansCollection = createSimilarCollection(self);
-        if (self.size() == 0)
+        if (self.isEmpty())
             return ansCollection;
         T head = self.iterator().next();
 
@@ -11959,7 +12063,7 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     public static <K,V> Map<K,V> minus(Map<K,V> self, Map removeMe) {
         final Map<K,V> ansMap = createSimilarMap(self);
         ansMap.putAll(self);
-        if (removeMe != null && removeMe.size() > 0) {
+        if (removeMe != null && !removeMe.isEmpty()) {
             for (Map.Entry<K, V> e1 : self.entrySet()) {
                 for (Object e2 : removeMe.entrySet()) {
                     if (DefaultTypeTransformation.compareEqual(e1, e2)) {
@@ -14980,17 +15084,23 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * @since 1.6.0
      */
     public static float trunc(Float number, int precision) {
+        if (number < 0f) {
+            return (float)(Math.ceil(number.doubleValue()*Math.pow(10,precision))/Math.pow(10,precision));
+        }
         return (float)(Math.floor(number.doubleValue()*Math.pow(10,precision))/Math.pow(10,precision));
     }
 
     /**
      * Truncate the value
      *
-     * @param number a Double
-     * @return the Double truncated to 0 decimal places (i.e. a synonym for floor)
+     * @param number a Float
+     * @return the Float truncated to 0 decimal places
      * @since 1.6.0
      */
     public static float trunc(Float number) {
+        if (number < 0f) {
+            return (float)Math.ceil(number.doubleValue());
+        }
         return (float)Math.floor(number.doubleValue());
     }
 
@@ -15021,10 +15131,13 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * Truncate the value
      *
      * @param number a Double
-     * @return the Double truncated to 0 decimal places (i.e. a synonym for floor)
+     * @return the Double truncated to 0 decimal places
      * @since 1.6.4
      */
     public static double trunc(Double number) {
+        if (number < 0d) {
+            return Math.ceil(number);
+        }
         return Math.floor(number);
     }
 
@@ -15037,7 +15150,72 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * @since 1.6.4
      */
     public static double trunc(Double number, int precision) {
+        if (number < 0d) {
+            return Math.ceil(number *Math.pow(10,precision))/Math.pow(10,precision);
+        }
         return Math.floor(number *Math.pow(10,precision))/Math.pow(10,precision);
+    }
+
+    /**
+     * Round the value
+     * <p>
+     * Note that this method differs from {@link java.math.BigDecimal#round(java.math.MathContext)}
+     * which specifies the digits to retain starting from the leftmost nonzero
+     * digit. This methods rounds the integral part to the nearest whole number.
+     *
+     * @param number a BigDecimal
+     * @return the rounded value of that BigDecimal
+     * @see #round(java.math.BigDecimal, int)
+     * @see java.math.BigDecimal#round(java.math.MathContext)
+     * @since 2.5.0
+     */
+    public static BigDecimal round(BigDecimal number) {
+        return round(number, 0);
+    }
+
+    /**
+     * Round the value
+     * <p>
+     * Note that this method differs from {@link java.math.BigDecimal#round(java.math.MathContext)}
+     * which specifies the digits to retain starting from the leftmost nonzero
+     * digit. This method operates on the fractional part of the number and
+     * the precision argument specifies the number of digits to the right of
+     * the decimal point to retain.
+     *
+     * @param number a BigDecimal
+     * @param precision the number of decimal places to keep
+     * @return a BigDecimal rounded to the number of decimal places specified by precision
+     * @see #round(java.math.BigDecimal)
+     * @see java.math.BigDecimal#round(java.math.MathContext)
+     * @since 2.5.0
+     */
+    public static BigDecimal round(BigDecimal number, int precision) {
+        return number.setScale(precision, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Truncate the value
+     *
+     * @param number a BigDecimal
+     * @return a BigDecimal truncated to 0 decimal places
+     * @see #trunc(java.math.BigDecimal, int)
+     * @since 2.5.0
+     */
+    public static BigDecimal trunc(BigDecimal number) {
+        return trunc(number, 0);
+    }
+
+    /**
+     * Truncate the value
+     *
+     * @param number a BigDecimal
+     * @param precision the number of decimal places to keep
+     * @return a BigDecimal truncated to the number of decimal places specified by precision
+     * @see #trunc(java.math.BigDecimal)
+     * @since 2.5.0
+     */
+    public static BigDecimal trunc(BigDecimal number, int precision) {
+        return number.setScale(precision, RoundingMode.DOWN);
     }
 
     /**
@@ -15940,6 +16118,55 @@ public class DefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      */
     public static <T> Iterator<T> iterator(Iterator<T> self) {
         return self;
+    }
+
+    /**
+     * Returns a <code>BufferedIterator</code> that allows examining the next element without
+     * consuming it.
+     * <pre class="groovyTestCase">
+     * assert [1, 2, 3, 4].iterator().buffered().with { [head(), toList()] } == [1, [1, 2, 3, 4]]
+     * </pre>
+     *
+     * @param self an iterator object
+     * @return a BufferedIterator wrapping self
+     * @since 2.5.0
+     */
+    public static <T> BufferedIterator<T> buffered(Iterator<T> self) {
+        if (self instanceof BufferedIterator) {
+            return (BufferedIterator<T>) self;
+        } else {
+            return new IteratorBufferedIterator<T>(self);
+        }
+    }
+
+    /**
+     * Returns a <code>BufferedIterator</code> that allows examining the next element without
+     * consuming it.
+     * <pre class="groovyTestCase">
+     * assert new LinkedHashSet([1,2,3,4]).bufferedIterator().with { [head(), toList()] } == [1, [1,2,3,4]]
+     * </pre>
+     *
+     * @param self an iterable object
+     * @return a BufferedIterator for traversing self
+     * @since 2.5.0
+     */
+    public static <T> BufferedIterator<T> bufferedIterator(Iterable<T> self) {
+        return new IteratorBufferedIterator<T>(self.iterator());
+    }
+
+    /**
+     * Returns a <code>BufferedIterator</code> that allows examining the next element without
+     * consuming it.
+     * <pre class="groovyTestCase">
+     * assert [1, 2, 3, 4].bufferedIterator().with { [head(), toList()] } == [1, [1, 2, 3, 4]]
+     * </pre>
+     *
+     * @param self a list
+     * @return a BufferedIterator for traversing self
+     * @since 2.5.0
+     */
+    public static <T> BufferedIterator<T> bufferedIterator(List<T> self) {
+        return new ListBufferedIterator<T>(self);
     }
 
     /**

@@ -29,7 +29,7 @@ import java.lang.annotation.Target;
  * Class annotation used to assist in the creation of map constructors in classes.
  * <p>
  * It allows you to write classes in this shortened form:
- * <pre>
+ * <pre class="groovyTestCase">
  * import groovy.transform.*
  *
  * {@code @TupleConstructor}
@@ -83,8 +83,10 @@ public @interface MapConstructor {
      * List of field and/or property names to include within the constructor.
      * Must not be used if 'excludes' is used. For convenience, a String with comma separated names
      * can be used in addition to an array (using Groovy's literal list notation) of String values.
+     * The default value is a special marker value indicating that no includes are defined; all fields and/or properties
+     * are included if 'includes' remains undefined and 'excludes' is explicitly or implicitly an empty list.
      */
-    String[] includes() default {};
+    String[] includes() default {Undefined.STRING};
 
     /**
      * Include fields in the constructor.
@@ -118,4 +120,9 @@ public @interface MapConstructor {
      * A Closure containing statements which will be appended to the end of the generated constructor. Useful for validation steps or tweaking the populated fields/properties.
      */
     Class post();
+
+    /**
+     * Whether to include all fields and/or properties within the constructor, including those with names that are considered internal.
+     */
+    boolean allNames() default false;
 }

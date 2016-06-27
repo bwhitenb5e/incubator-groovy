@@ -36,7 +36,7 @@ public class TestNgRunner implements GroovyRunner {
 
     /**
      * Utility method to check via reflection if the parsed class appears to be a TestNG
-     * test, i.e.&nsbp;checks whether it appears to be using the relevant TestNG annotations.
+     * test, i.e. checks whether it appears to be using the relevant TestNG annotations.
      *
      * @param scriptClass the class we want to check
      * @param loader the GroovyClassLoader to use to find classes
@@ -44,10 +44,6 @@ public class TestNgRunner implements GroovyRunner {
      */
     @SuppressWarnings("unchecked")
     public boolean canRun(Class scriptClass, GroovyClassLoader loader) {
-        char version = System.getProperty("java.version").charAt(2);
-        if (version < '5') {
-            return false;
-        }
         // check if there are appropriate class or method annotations
         // that suggest we have a TestNG test
         boolean isTest = false;

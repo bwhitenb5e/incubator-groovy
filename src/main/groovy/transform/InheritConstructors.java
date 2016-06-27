@@ -27,11 +27,13 @@ import java.lang.annotation.Target;
 
 /**
  * Class annotation to make constructors from a super class available in a sub class.
+ * Should be used with care with other annotations which create constructors - see "Known
+ * Limitations" for more details.
  * <p>
  * {@code @InheritConstructors} saves you typing some boilerplate code.
  * <p>
  * <em>Example usage:</em>
- * <pre>
+ * <pre class="groovyTestCase">
  * class Person {
  *     String first, last
  *     Person(String first, String last) {
@@ -40,15 +42,15 @@ import java.lang.annotation.Target;
  *     }
  * }
  *
- * {@code @InheritConstructors}
+ * {@code @groovy.transform.InheritConstructors}
  * class PersonAge extends Person {
  *     int age
  * }
  *
  * def js = new PersonAge('John', 'Smith')
  * js.age = 25
- * println "$js.last, $js.first is $js.age years old"
- * // => SMITH, John is 25 years old
+ * 
+ * assert "$js.last, $js.first is $js.age years old" == 'SMITH, John is 25 years old'
  * </pre>
  * for this case, the <code>PersonAge</code> class will be
  * equivalent to the following code:
@@ -96,13 +98,50 @@ import java.lang.annotation.Target;
  *     }
  * }
  * </pre>
- *
- * <em>Advanced note:</em>If you create Groovy constructors with optional
+ * Known Limitations:
+ * <ul>
+ * <li>This AST transform creates (potentially) numerous constructors.
+ * You should take care to avoid constructors with duplicate signatures if you are defining your own constructors or
+ * combining with other AST transforms which create constructors (e.g. {@code @TupleConstructor});
+ * the order in which the particular transforms are processed becomes important in that case.</li>
+ * <li>If you create Groovy constructors with optional
  * arguments this leads to multiple constructors created in the byte code.
  * The expansion to multiple constructors occurs in a later phase to
  * this AST transformation. This means that you can't override (i.e. not
  * inherit) the constructors with signatures that Groovy adds later.
- * If you get it wrong you will get a compile-time error about the duplication.
+ * If you get it wrong you will get a compile-time error about the duplication.</li>
+ * </ul>
+ * <p>More examples:</p>
+ * <pre class="groovyTestCase">
+ * //--------------------------------------------------------------------------
+ * import groovy.transform.InheritConstructors
+ *
+ * &#64;InheritConstructors
+ * class MyException extends Exception {
+ * }
+ *
+ * def e = new MyException()
+ * def e1 = new MyException('message')   // Other constructors are available.
+ * assert 'message' == e1.message
+ * </pre>
+ * <pre class="groovyTestCase">
+ * //--------------------------------------------------------------------------
+ * import groovy.transform.InheritConstructors
+
+ * class Person {
+ *     String name
+ *
+ *     Person(String name) {
+ *         this.name = name
+ *     }
+ * }
+ *
+ * &#64;InheritConstructors
+ * class Child extends Person {}
+ *
+ * def child = new Child('Liam')
+ * assert 'Liam' == child.name
+ * </pre>
  *
  * @author Paul King
  * @since 1.7.3

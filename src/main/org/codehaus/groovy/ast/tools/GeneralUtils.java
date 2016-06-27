@@ -18,6 +18,7 @@
  */
 package org.codehaus.groovy.ast.tools;
 
+import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassHelper;
@@ -47,12 +48,15 @@ import org.codehaus.groovy.ast.expr.StaticMethodCallExpression;
 import org.codehaus.groovy.ast.expr.TernaryExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.CatchStatement;
 import org.codehaus.groovy.ast.stmt.EmptyStatement;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
 import org.codehaus.groovy.ast.stmt.IfStatement;
 import org.codehaus.groovy.ast.stmt.ReturnStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.ast.stmt.ThrowStatement;
 import org.codehaus.groovy.classgen.Verifier;
+import org.codehaus.groovy.control.io.ReaderSource;
 import org.codehaus.groovy.runtime.GeneratedClosure;
 import org.codehaus.groovy.runtime.MetaClassHelper;
 import org.codehaus.groovy.syntax.Token;
@@ -125,6 +129,13 @@ public class GeneralUtils {
     }
 
     public static BlockStatement block(VariableScope varScope, Statement... stmts) {
+        BlockStatement block = new BlockStatement();
+        block.setVariableScope(varScope);
+        for (Statement stmt : stmts) block.addStatement(stmt);
+        return block;
+    }
+
+    public static BlockStatement block(VariableScope varScope, List<Statement> stmts) {
         BlockStatement block = new BlockStatement();
         block.setVariableScope(varScope);
         for (Statement stmt : stmts) block.addStatement(stmt);
@@ -638,6 +649,14 @@ public class GeneralUtils {
         return new VariableExpression(name, type);
     }
 
+    public static ThrowStatement throwS(Expression expr) {
+        return new ThrowStatement(expr);
+    }
+
+    public static CatchStatement catchS(Parameter variable, Statement code) {
+        return new CatchStatement(variable, code);
+    }
+
     /**
      * This method is similar to {@link #propX(Expression, Expression)} but will make sure that if the property
      * being accessed is defined inside the classnode provided as a parameter, then a getter call is generated
@@ -679,5 +698,73 @@ public class GeneralUtils {
             return callX(receiver, getterName);
         }
         return propX(receiver, pNode.getName());
+    }
+
+    /**
+     * Converts an expression into the String source. Only some specific expressions like closure expression
+     * support this.
+     *
+     * @param readerSource a source
+     * @param expression an expression. Can't be null
+     * @return the source the closure was created from
+     * @throws java.lang.IllegalArgumentException when expression is null
+     * @throws java.lang.Exception when closure can't be read from source
+     */
+    public static String convertASTToSource(ReaderSource readerSource, ASTNode expression) throws Exception {
+        if (expression == null) throw new IllegalArgumentException("Null: expression");
+
+        StringBuilder result = new StringBuilder();
+        for (int x = expression.getLineNumber(); x <= expression.getLastLineNumber(); x++) {
+            String line = readerSource.getLine(x, null);
+            if (line == null) {
+                throw new Exception(
+                        "Error calculating source code for expression. Trying to read line " + x + " from " + readerSource.getClass()
+                );
+            }
+            if (x == expression.getLastLineNumber()) {
+                line = line.substring(0, expression.getLastColumnNumber() - 1);
+            }
+            if (x == expression.getLineNumber()) {
+                line = line.substring(expression.getColumnNumber() - 1);
+            }
+            //restoring line breaks is important b/c of lack of semicolons
+            result.append(line).append('\n');
+        }
+
+
+        String source = result.toString().trim();
+
+        return source;
+    }
+
+    public static boolean copyStatementsWithSuperAdjustment(ClosureExpression pre, BlockStatement body) {
+        Statement preCode = pre.getCode();
+        boolean changed = false;
+        if (preCode instanceof BlockStatement) {
+            BlockStatement block = (BlockStatement) preCode;
+            List<Statement> statements = block.getStatements();
+            for (int i = 0; i < statements.size(); i++) {
+                Statement statement = statements.get(i);
+                // adjust the first statement if it's a super call
+                if (i == 0 && statement instanceof ExpressionStatement) {
+                    ExpressionStatement es = (ExpressionStatement) statement;
+                    Expression preExp = es.getExpression();
+                    if (preExp instanceof MethodCallExpression) {
+                        MethodCallExpression mce = (MethodCallExpression) preExp;
+                        String name = mce.getMethodAsString();
+                        if ("super".equals(name)) {
+                            es.setExpression(new ConstructorCallExpression(ClassNode.SUPER, mce.getArguments()));
+                            changed = true;
+                        }
+                    }
+                }
+                body.addStatement(statement);
+            }
+        }
+        return changed;
+    }
+
+    public static String getSetterName(String name) {
+        return "set" + Verifier.capitalize(name);
     }
 }

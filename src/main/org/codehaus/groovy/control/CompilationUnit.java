@@ -186,6 +186,16 @@ public class CompilationUnit extends ProcessingUnit {
             }
         }, Phases.SEMANTIC_ANALYSIS);
         addPhaseOperation(new PrimaryClassNodeOperation() {
+            @Override
+            public void call(SourceUnit source, GeneratorContext context,
+                             ClassNode classNode) throws CompilationFailedException {
+                if (!classNode.isSynthetic()) {
+                    GenericsVisitor genericsVisitor = new GenericsVisitor(source);
+                    genericsVisitor.visitClass(classNode);
+                }
+            }
+        }, Phases.SEMANTIC_ANALYSIS);
+        addPhaseOperation(new PrimaryClassNodeOperation() {
             public void call(SourceUnit source, GeneratorContext context,
                              ClassNode classNode) throws CompilationFailedException {
                 TraitComposer.doExtendTraits(classNode, source, CompilationUnit.this);
@@ -764,11 +774,6 @@ public class CompilationUnit extends ProcessingUnit {
 
             optimizer.visitClass(classNode, source); // GROOVY-4272: repositioned it here from staticImport
 
-            if(!classNode.isSynthetic()) {
-                GenericsVisitor genericsVisitor = new GenericsVisitor(source);
-                genericsVisitor.visitClass(classNode);
-            }
-
             //
             // Run the Verifier on the outer class
             //
@@ -965,7 +970,7 @@ public class CompilationUnit extends ProcessingUnit {
         public abstract void call(GroovyClass gclass) throws CompilationFailedException;
     }
 
-    private int getSuperClassCount(ClassNode element) {
+    private static int getSuperClassCount(ClassNode element) {
         int count = 0;
         while (element != null) {
             count++;
@@ -1014,15 +1019,13 @@ public class CompilationUnit extends ProcessingUnit {
         return sorted;
     }
 
-    private List<ClassNode> getSorted(int[] index, List<ClassNode> unsorted) {
+    private static List<ClassNode> getSorted(int[] index, List<ClassNode> unsorted) {
         List<ClassNode> sorted = new ArrayList<ClassNode>(unsorted.size());
         for (int i = 0; i < unsorted.size(); i++) {
             int min = -1;
             for (int j = 0; j < unsorted.size(); j++) {
                 if (index[j] == -1) continue;
-                if (min == -1) {
-                    min = j;
-                } else if (index[j] < index[min]) {
+                if (min == -1 || index[j] < index[min]) {
                     min = j;
                 }
             }

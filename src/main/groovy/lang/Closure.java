@@ -36,7 +36,7 @@ import java.io.Writer;
  * <p>
  * Groovy allows instances of Closures to be called in a
  * short form. For example:
- * <pre>
+ * <pre class="groovyTestCase">
  * def a = 1
  * def c = { a }
  * assert c() == 1
@@ -48,7 +48,7 @@ import java.io.Writer;
  * {@link #getParameterTypes()} will work too without any
  * additional code. If no doCall method is provided a
  * closure must be used in its long form like
- * <pre>
+ * <pre class="groovyTestCase">
  * def a = 1
  * def c = {a}
  * assert c.call() == 1
@@ -66,7 +66,7 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      * With this resolveStrategy set the closure will attempt to resolve property references and methods to the
      * owner first, then the delegate (<b>this is the default strategy</b>).
      *
-     * For example the following code :
+     * For example the following code:
      * <pre>
      * class Test {
      *     def x = 30
@@ -77,21 +77,15 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      *         def cl = { y = x + y }
      *         cl.delegate = data
      *         cl()
-     *         println x
-     *         println y
-     *         println data
+     *         assert x == 30
+     *         assert y == 70
+     *         assert data == [x:10, y:20]
      *     }
      * }
      *
      * new Test().run()
      * </pre>
-     * will output :
-     * <pre>
-     * 30
-     * 70
-     * [x:10, y:20]
-     * </pre>
-     * because the x and y fields declared in the Test class the variables in the delegate.<p>
+     * Will succeed, because the x and y fields declared in the Test class shadow the variables in the delegate.<p>
      * <i>Note that local variables are always looked up first, independently of the resolution strategy.</i>
      */
     public static final int OWNER_FIRST = 0;
@@ -100,8 +94,8 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      * With this resolveStrategy set the closure will attempt to resolve property references and methods to the
      * delegate first then the owner.
      *
-     * For example the following code :
-     * <pre>
+     * For example the following code:
+     * <pre class="groovyTestCase">
      * class Test {
      *     def x = 30
      *     def y = 40
@@ -112,21 +106,15 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      *         cl.delegate = data
      *         cl.resolveStrategy = Closure.DELEGATE_FIRST
      *         cl()
-     *         println x
-     *         println y
-     *         println data
+     *         assert x == 30
+     *         assert y == 40
+     *         assert data == [x:10, y:30]
      *     }
      * }
      *
      * new Test().run()
      * </pre>
-     * will output :
-     * <pre>
-     * 30
-     * 40
-     * [x:10, y:30]
-     * </pre>
-     * because the x and y variables declared in the delegate shadow the fields in the owner class.<p>
+     * This will succeed, because the x and y variables declared in the delegate shadow the fields in the owner class.<p>
      * <i>Note that local variables are always looked up first, independently of the resolution strategy.</i>
      */
     public static final int DELEGATE_FIRST = 1;
@@ -256,7 +244,7 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
     }
 
     /**
-     * Gets the strategy which the closure users to resolve methods and properties
+     * Gets the strategy which the closure uses to resolve methods and properties
      *
      * @return The resolve strategy
      *
@@ -561,7 +549,7 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      * Support for Closure "right" currying.
      * Parameters are supplied on the right rather than left as per the normal curry() method.
      * Typical usage:
-     * <pre>
+     * <pre class="groovyTestCase">
      * def divide = { a, b -> a / b }
      * def halver = divide.rcurry(2)
      * assert halver(8) == 4
@@ -635,12 +623,12 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      * Support for Closure forward composition.
      * <p>
      * Typical usage:
-     * <pre>
-     * def twice = { a -> a * 2 }
-     * def thrice = { a -> a * 3 }
-     * def times6 = twice >> thrice
-     * // equivalent: times6 = { a -> thrice(twice(a)) }
-     * assert times6(3) == 18
+     * <pre class="groovyTestCase">
+     * def times2 = { a -> a * 2 }
+     * def add3 = { a -> a + 3 }
+     * def timesThenAdd = times2 >> add3
+     * // equivalent: timesThenAdd = { a -> add3(times2(a)) }
+     * assert timesThenAdd(3) == 9
      * </pre>
      *
      * @param other the Closure to compose with the current Closure
@@ -654,12 +642,12 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      * Support for Closure reverse composition.
      * <p>
      * Typical usage:
-     * <pre>
-     * def twice = { a -> a * 2 }
-     * def thrice = { a -> a * 3 }
-     * def times6 = thrice << twice
-     * // equivalent: times6 = { a -> thrice(twice(a)) }
-     * assert times6(3) == 18
+     * <pre class="groovyTestCase">
+     * def times2 = { a -> a * 2 }
+     * def add3 = { a -> a + 3 }
+     * def addThenTimes = times2 << add3
+     * // equivalent: addThenTimes = { a -> times2(add3(a)) }
+     * assert addThenTimes(3) == 12
      * </pre>
      *
      * @param other the Closure to compose with the current Closure
@@ -673,10 +661,10 @@ public abstract class Closure<V> extends GroovyObjectSupport implements Cloneabl
      * Alias for calling a Closure for non-closure arguments.
      * <p>
      * Typical usage:
-     * <pre>
-     * def twice = { a -> a * 2 }
-     * def thrice = { a -> a * 3 }
-     * assert thrice << twice << 3 == 18
+     * <pre class="groovyTestCase">
+     * def times2 = { a -> a * 2 }
+     * def add3 = { a -> a * 3 }
+     * assert add3 << times2 << 3 == 9
      * </pre>
      *
      * @param arg the argument to call the closure with

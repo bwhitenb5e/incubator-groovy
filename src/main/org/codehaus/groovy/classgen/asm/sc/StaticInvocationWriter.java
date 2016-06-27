@@ -34,9 +34,9 @@ import org.codehaus.groovy.classgen.Verifier;
 import org.codehaus.groovy.classgen.asm.*;
 import org.codehaus.groovy.runtime.InvokerHelper;
 import org.codehaus.groovy.syntax.SyntaxException;
-import org.codehaus.groovy.syntax.Token;
 import org.codehaus.groovy.transform.sc.StaticCompilationMetadataKeys;
 import org.codehaus.groovy.transform.sc.StaticCompilationVisitor;
+import org.codehaus.groovy.transform.sc.TemporaryVariableExpression;
 import org.codehaus.groovy.transform.stc.ExtensionMethodNode;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingVisitor;
@@ -78,7 +78,7 @@ public class StaticInvocationWriter extends InvocationWriter {
 
     private final AtomicInteger labelCounter = new AtomicInteger();
 
-    private final WriterController controller;
+    final WriterController controller;
 
     private MethodCallExpression currentCall;
 
@@ -187,13 +187,15 @@ public class StaticInvocationWriter extends InvocationWriter {
         MethodNode bridge = bridges==null?null:bridges.get(target);
         if (bridge != null) {
             Expression fixedReceiver = receiver;
-            ClassNode classNode = implicitThis?controller.getClassNode():null;
             ClassNode declaringClass = bridge.getDeclaringClass();
-            if (implicitThis && !controller.isInClosure()
-                    && !classNode.isDerivedFrom(declaringClass)
-                    && !classNode.implementsInterface(declaringClass)
-                    && classNode instanceof InnerClassNode) {
-                fixedReceiver = new PropertyExpression(new ClassExpression(classNode.getOuterClass()), "this");
+            if (implicitThis && !controller.isInClosure()) {
+                ClassNode classNode = controller.getClassNode();
+                while (!classNode.isDerivedFrom(declaringClass)
+                        && !classNode.implementsInterface(declaringClass)
+                        && classNode instanceof InnerClassNode) {
+                    classNode = classNode.getOuterClass();
+                }
+                fixedReceiver = new PropertyExpression(new ClassExpression(classNode), "this");
             }
             ArgumentListExpression newArgs = new ArgumentListExpression(target.isStatic()?new ConstantExpression(null):fixedReceiver);
             for (Expression expression : args.getExpressions()) {
@@ -332,7 +334,7 @@ public class StaticInvocationWriter extends InvocationWriter {
         AsmClassGenerator acg = controller.getAcg();
         TypeChooser typeChooser = controller.getTypeChooser();
         OperandStack operandStack = controller.getOperandStack();
-        ClassNode lastArgType = argumentList.size()>0?
+        ClassNode lastArgType = !argumentList.isEmpty() ?
                 typeChooser.resolveType(argumentList.get(argumentList.size()-1), controller.getClassNode()):null;
         if (lastParaType.isArray()
                 && ((argumentList.size() > para.length)
@@ -343,7 +345,6 @@ public class StaticInvocationWriter extends InvocationWriter {
                 ) {
             int stackLen = operandStack.getStackLength() + argumentList.size();
             MethodVisitor mv = controller.getMethodVisitor();
-            MethodVisitor orig = mv;
             //mv = new org.objectweb.asm.util.TraceMethodVisitor(mv);
             controller.setMethodVisitor(mv);
             // varg call
@@ -414,7 +415,7 @@ public class StaticInvocationWriter extends InvocationWriter {
         }
     }
 
-    private boolean isNullConstant(final Expression expression) {
+    private static boolean isNullConstant(final Expression expression) {
         return (expression instanceof ConstantExpression && ((ConstantExpression) expression).getValue() == null);
     }
 
@@ -445,6 +446,11 @@ public class StaticInvocationWriter extends InvocationWriter {
         }
         // if call is spread safe, replace it with a for in loop
         if (spreadSafe && origin instanceof MethodCallExpression) {
+            // receiver expressions with side effects should not be visited twice, avoid by using a temporary variable
+            Expression tmpReceiver = receiver;
+            if (!(receiver instanceof VariableExpression) && !(receiver instanceof ConstantExpression)) {
+                tmpReceiver = new TemporaryVariableExpression(receiver);
+            }
             MethodVisitor mv = controller.getMethodVisitor();
             CompileStack compileStack = controller.getCompileStack();
             TypeChooser typeChooser = controller.getTypeChooser();
@@ -452,28 +458,20 @@ public class StaticInvocationWriter extends InvocationWriter {
             ClassNode classNode = controller.getClassNode();
             int counter = labelCounter.incrementAndGet();
 
-            // create an empty arraylist
-            VariableExpression result = new VariableExpression(
-                    "spreadresult" + counter,
-                    StaticCompilationVisitor.ARRAYLIST_CLASSNODE
-            );
+            // use a temporary variable for the arraylist in which the results of the spread call will be stored
             ConstructorCallExpression cce = new ConstructorCallExpression(StaticCompilationVisitor.ARRAYLIST_CLASSNODE, ArgumentListExpression.EMPTY_ARGUMENTS);
             cce.setNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET, StaticCompilationVisitor.ARRAYLIST_CONSTRUCTOR);
-            DeclarationExpression declr = new DeclarationExpression(
-                    result,
-                    Token.newSymbol("=", origin.getLineNumber(), origin.getColumnNumber()),
-                    cce
-            );
-            declr.visit(controller.getAcg());
+            TemporaryVariableExpression result = new TemporaryVariableExpression(cce);
+            result.visit(controller.getAcg());
             operandStack.pop();
             // if (receiver != null)
-            receiver.visit(controller.getAcg());
+            tmpReceiver.visit(controller.getAcg());
             Label ifnull = compileStack.createLocalLabel("ifnull_" + counter);
             mv.visitJumpInsn(IFNULL, ifnull);
             operandStack.remove(1); // receiver consumed by if()
             Label nonull = compileStack.createLocalLabel("nonull_" + counter);
             mv.visitLabel(nonull);
-            ClassNode componentType = StaticTypeCheckingVisitor.inferLoopElementType(typeChooser.resolveType(receiver, classNode));
+            ClassNode componentType = StaticTypeCheckingVisitor.inferLoopElementType(typeChooser.resolveType(tmpReceiver, classNode));
             Parameter iterator = new Parameter(componentType, "for$it$" + counter);
             VariableExpression iteratorAsVar = new VariableExpression(iterator);
             MethodCallExpression origMCE = (MethodCallExpression) origin;
@@ -495,7 +493,7 @@ public class StaticInvocationWriter extends InvocationWriter {
             // for (e in receiver) { result.add(e?.method(arguments) }
             ForStatement stmt = new ForStatement(
                     iterator,
-                    receiver,
+                    tmpReceiver,
                     new ExpressionStatement(add)
             );
             stmt.visit(controller.getAcg());
@@ -505,6 +503,12 @@ public class StaticInvocationWriter extends InvocationWriter {
             // end of if/else
             // return result list
             result.visit(controller.getAcg());
+
+            // cleanup temporary variables
+            if (tmpReceiver instanceof TemporaryVariableExpression) {
+                ((TemporaryVariableExpression) tmpReceiver).remove(controller);
+            }
+            result.remove(controller);
         } else if (safe && origin instanceof MethodCallExpression) {
             // wrap call in an IFNULL check
             MethodVisitor mv = controller.getMethodVisitor();
@@ -562,7 +566,6 @@ public class StaticInvocationWriter extends InvocationWriter {
 
     boolean tryImplicitReceiver(final Expression origin, final Expression message, final Expression arguments, final MethodCallerMultiAdapter adapter, final boolean safe, final boolean spreadSafe, final boolean implicitThis) {
         Object implicitReceiver = origin.getNodeMetaData(StaticTypesMarker.IMPLICIT_RECEIVER);
-        ClassNode propertyOwnerType = origin.getNodeMetaData(StaticCompilationMetadataKeys.PROPERTY_OWNER);
         if (implicitThis && implicitReceiver==null && origin instanceof MethodCallExpression) {
             implicitReceiver = ((MethodCallExpression) origin).getObjectExpression().getNodeMetaData(StaticTypesMarker.IMPLICIT_RECEIVER);
         }
@@ -576,9 +579,6 @@ public class StaticInvocationWriter extends InvocationWriter {
                 pexp = new PropertyExpression(pexp, propertyPath[i]);
             }
             pexp.putNodeMetaData(StaticTypesMarker.IMPLICIT_RECEIVER, implicitReceiver);
-            if (propertyOwnerType!=null) {
-                pexp.putNodeMetaData(StaticTypesMarker.INFERRED_TYPE, propertyOwnerType);
-            }
             origin.removeNodeMetaData(StaticTypesMarker.IMPLICIT_RECEIVER);
             if (origin instanceof PropertyExpression) {
                 PropertyExpression rewritten = new PropertyExpression(
@@ -596,25 +596,6 @@ public class StaticInvocationWriter extends InvocationWriter {
             return true;
         }
         return false;
-    }
-
-    private static void pushZero(final MethodVisitor mv, final ClassNode type) {
-        boolean isInt = ClassHelper.int_TYPE.equals(type);
-        boolean isShort = ClassHelper.short_TYPE.equals(type);
-        boolean isByte = ClassHelper.byte_TYPE.equals(type);
-        if (isInt || isShort || isByte) {
-            mv.visitInsn(ICONST_0);
-        } else if (ClassHelper.long_TYPE.equals(type)) {
-            mv.visitInsn(LCONST_0);
-        } else if (ClassHelper.float_TYPE.equals(type)) {
-            mv.visitInsn(FCONST_0);
-        } else if (ClassHelper.double_TYPE.equals(type)) {
-            mv.visitInsn(DCONST_0);
-        } else if (ClassHelper.boolean_TYPE.equals(type)) {
-            mv.visitInsn(ICONST_0);
-        } else {
-            mv.visitLdcInsn(0);
-        }
     }
 
     private class CheckcastReceiverExpression extends Expression {

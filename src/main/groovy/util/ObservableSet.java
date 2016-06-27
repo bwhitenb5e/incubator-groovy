@@ -236,7 +236,7 @@ public class ObservableSet<E> implements Set<E> {
                     values.add(element);
                 }
             }
-            if (values.size() > 0) {
+            if (!values.isEmpty()) {
                 fireMultiElementAddedEvent(values);
                 fireSizeChangedEvent(oldSize, size());
             }
@@ -251,6 +251,10 @@ public class ObservableSet<E> implements Set<E> {
         }
 
         List values = new ArrayList();
+        // GROOVY-7822 use Set for O(1) performance for contains
+        if (!(c instanceof Set)) {
+            c = new HashSet<Object>(c);
+        }
         for (Object element : delegate) {
             if (!c.contains(element)) {
                 values.add(element);

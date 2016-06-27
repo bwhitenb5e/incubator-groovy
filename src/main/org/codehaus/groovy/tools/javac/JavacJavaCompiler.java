@@ -62,7 +62,6 @@ public class JavacJavaCompiler implements JavaCompiler {
                 Object ret = method.invoke(null, new Object[]{javacParameters});
                 javacReturnValue = (Integer) ret;
             }
-            cu.getConfiguration().getOutput();
         } catch (InvocationTargetException ite) {
             cu.getErrorCollector().addFatalError(new ExceptionMessage((Exception) ite.getCause(), true, cu));
         } catch (Exception e) {
@@ -82,7 +81,7 @@ public class JavacJavaCompiler implements JavaCompiler {
         }
     }
 
-    private void addJavacError(String header, CompilationUnit cu, StringWriter msg) {
+    private static void addJavacError(String header, CompilationUnit cu, StringWriter msg) {
         if (msg != null) {
             header = header + "\n" + msg.getBuffer().toString();
         } else {

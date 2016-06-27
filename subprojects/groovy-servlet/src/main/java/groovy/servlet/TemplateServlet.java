@@ -123,10 +123,6 @@ public class TemplateServlet extends AbstractHttpServlet {
         long length;
         Template template;
 
-        public TemplateCacheEntry(File file, Template template) {
-            this(file, template, false); // don't get time millis for sake of speed
-        }
-
         public TemplateCacheEntry(File file, Template template, boolean timestamp) {
             if (template == null) {
                 throw new NullPointerException("template");
@@ -227,7 +223,7 @@ public class TemplateServlet extends AbstractHttpServlet {
                 template = entry.template;
             } else {
                 if (verbose) {
-                    log("Cached template " + key + " needs recompiliation! " + entry);
+                    log("Cached template " + key + " needs recompilation! " + entry);
                 }
             }
         } else {
@@ -242,7 +238,7 @@ public class TemplateServlet extends AbstractHttpServlet {
     /**
      * Compile the template and store it in the cache.
      * @param key a unique key for the template, such as a file's absolutePath or a URL.
-     * @param reader a reader for the template's source.
+     * @param inputStream an InputStream for the template's source.
      * @param file a file to be used to determine if the cached template is stale. May be null.
      * @return the created template.
      * @throws Exception Any exception when creating the template.
@@ -428,7 +424,7 @@ public class TemplateServlet extends AbstractHttpServlet {
         long getMillis;
         String name;
         
-        File file = super.getScriptUriAsFile(request);
+        File file = getScriptUriAsFile(request);
         if (file != null) {
             name = file.getName();
             if (!file.exists()) {
@@ -443,7 +439,7 @@ public class TemplateServlet extends AbstractHttpServlet {
             template = getTemplate(file);
             getMillis = System.currentTimeMillis() - getMillis;
         } else {
-            name = super.getScriptUri(request);
+            name = getScriptUri(request);
             URL url = servletContext.getResource(name);
             getMillis = System.currentTimeMillis();
             template = getTemplate(url);

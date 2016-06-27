@@ -271,7 +271,7 @@ class InnerClassTest extends CompilableTestSupport {
         '''
     }
 
-    void testUsageOfOuterFieldOverriden_FAILS() {
+    void testUsageOfOuterFieldOverridden_FAILS() {
         if (notYetImplemented()) return
 
         assertScript """
@@ -340,7 +340,7 @@ class InnerClassTest extends CompilableTestSupport {
         """
     }
 
-    void testUsageOfOuterMethodOverriden() {
+    void testUsageOfOuterMethodoverridden() {
         assertScript """
             interface Run {
                 def run()
@@ -672,6 +672,36 @@ import org.codehaus.groovy.classgen.Verifier
                 }
             }
             assert new Outer().test() == 1
+        '''
+    }
+
+    void testInnerClassOfInterfaceIsStatic() {
+        //GROOVY-7312
+        assertScript '''
+            import java.lang.reflect.Modifier
+            interface Baz {
+                class Pls {}
+            }
+
+            assert Modifier.isStatic(Baz.Pls.modifiers)
+        '''
+    }
+
+    void testInnerClassOfInterfaceIsStaticVariant() {
+        //GROOVY-7312
+        assertScript '''
+            import java.lang.reflect.Modifier
+            import groovy.transform.ASTTest
+            import org.codehaus.groovy.control.CompilePhase
+            import org.objectweb.asm.Opcodes
+
+            @ASTTest(phase = CLASS_GENERATION, value = {
+                assert node.innerClasses.every { it.modifiers & Opcodes.ACC_STATIC }
+            })
+            interface Baz {
+                def foo = { "bar" }
+            }
+            null
         '''
     }
 }

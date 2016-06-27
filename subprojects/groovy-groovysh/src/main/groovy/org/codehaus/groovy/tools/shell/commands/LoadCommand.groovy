@@ -41,7 +41,7 @@ class LoadCommand
 
     @Override
     protected List<Completer> createCompleters() {
-        return [ new FileNameCompleter(true, true) ]
+        return [ new FileNameCompleter(true) ]
     }
 
     @Override
@@ -55,7 +55,7 @@ class LoadCommand
         for (source in args) {
             URL url
 
-            log.debug("Attempting to load: \"$url\"")
+            log.debug("Attempting to load: \"$source\"")
 
             try {
                 url = new URL("$source")
@@ -81,7 +81,10 @@ class LoadCommand
             io.out.println("Loading: $url")
         }
 
-        url.eachLine { String it ->
+        url.eachLine { String it, int lineNumber ->
+            if (lineNumber == 1 && it.startsWith('#!')) {
+                return
+            }
             shell << it as String
         }
     }

@@ -40,8 +40,8 @@ import java.util.*;
  * JSON slurper parses text or reader content into a data structure of lists and maps.
  * <p>
  * Example usage:
- * <code><pre>
- * def slurper = new JsonSlurper()
+ * <code><pre class="groovyTestCase">
+ * def slurper = new groovy.json.JsonSlurper()
  * def result = slurper.parseText('{"person":{"name":"Guillaume","age":33,"pets":["dog","cat"]}}')
  *
  * assert result.person.name == "Guillaume"
@@ -200,7 +200,7 @@ public class JsonSlurper {
      */
     public Object parseText(String text) {
         if (text == null || "".equals(text)) {
-            throw new IllegalArgumentException("Text must not be null");
+            throw new IllegalArgumentException("Text must not be null or empty");
         }
         return createParser().parse(text);
     }

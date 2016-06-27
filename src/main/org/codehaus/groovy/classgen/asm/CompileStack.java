@@ -65,7 +65,7 @@ import java.util.*;
  */
 public class CompileStack implements Opcodes {
     /**
-     * @todo remove optimization of this.foo -> this.@foo
+     * TODO: remove optimization of this.foo -> this.@foo
      *
      */
 
@@ -195,7 +195,7 @@ public class CompileStack implements Opcodes {
     }
 
     private void popState() {
-        if (stateStack.size()==0) {
+        if (stateStack.isEmpty()) {
              throw new GroovyBugError("Tried to do a pop on the compile stack without push.");
         }
         StateStackElement element = (StateStackElement) stateStack.removeLast();
@@ -632,7 +632,7 @@ public class CompileStack implements Opcodes {
         mv.visitVarInsn(ASTORE, reference.getIndex());
     }
 
-    private void pushInitValue(ClassNode type, MethodVisitor mv) {
+    private static void pushInitValue(ClassNode type, MethodVisitor mv) {
         if (ClassHelper.isPrimitiveType(type)) {
             if (type==ClassHelper.long_TYPE) {
                 mv.visitInsn(LCONST_0);
@@ -762,7 +762,7 @@ public class CompileStack implements Opcodes {
     }
 
     private void applyBlockRecorder(List<BlockRecorder> blocks) {
-        if (blocks.size()==0 || blocks.size()==visitedBlocks.size()) return;
+        if (blocks.isEmpty() || blocks.size()==visitedBlocks.size()) return;
 
         MethodVisitor mv = controller.getMethodVisitor();
 

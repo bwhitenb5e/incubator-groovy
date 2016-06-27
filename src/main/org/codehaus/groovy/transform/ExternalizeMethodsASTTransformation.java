@@ -26,7 +26,7 @@ import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.Parameter;
-import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.tools.GenericsUtils;
 import org.codehaus.groovy.control.CompilePhase;
@@ -74,7 +74,7 @@ public class ExternalizeMethodsASTTransformation extends AbstractASTTransformati
             if (!checkNotInterface(cNode, MY_TYPE_NAME)) return;
             cNode.addInterface(EXTERNALIZABLE_TYPE);
             boolean includeFields = memberHasValue(anno, "includeFields", true);
-            List<String> excludes = getMemberList(anno, "excludes");
+            List<String> excludes = getMemberStringList(anno, "excludes");
             if (!checkPropertyList(cNode, excludes, "excludes", anno, MY_TYPE_NAME, includeFields)) return;
             List<FieldNode> list = getInstancePropertyFields(cNode);
             if (includeFields) {
@@ -85,32 +85,35 @@ public class ExternalizeMethodsASTTransformation extends AbstractASTTransformati
         }
     }
 
-    private void createWriteExternal(ClassNode cNode, List<String> excludes, List<FieldNode> list) {
+    private static void createWriteExternal(ClassNode cNode, List<String> excludes, List<FieldNode> list) {
         final BlockStatement body = new BlockStatement();
         Parameter out = param(OBJECTOUTPUT_TYPE, "out");
         for (FieldNode fNode : list) {
-            if (excludes.contains(fNode.getName())) continue;
+            if (excludes != null && excludes.contains(fNode.getName())) continue;
             if ((fNode.getModifiers() & ACC_TRANSIENT) != 0) continue;
-            body.addStatement(stmt(callX(varX(out), "write" + suffixForField(fNode), varX(fNode))));
+            MethodCallExpression writeObject = callX(varX(out), "write" + suffixForField(fNode), varX(fNode));
+            writeObject.setImplicitThis(false);
+            body.addStatement(stmt(writeObject));
         }
         ClassNode[] exceptions = {make(IOException.class)};
         cNode.addMethod("writeExternal", ACC_PUBLIC, ClassHelper.VOID_TYPE, params(out), exceptions, body);
     }
 
-    private void createReadExternal(ClassNode cNode, List<String> excludes, List<FieldNode> list) {
+    private static void createReadExternal(ClassNode cNode, List<String> excludes, List<FieldNode> list) {
         final BlockStatement body = new BlockStatement();
         Parameter oin = param(OBJECTINPUT_TYPE, "oin");
         for (FieldNode fNode : list) {
-            if (excludes.contains(fNode.getName())) continue;
+            if (excludes != null && excludes.contains(fNode.getName())) continue;
             if ((fNode.getModifiers() & ACC_TRANSIENT) != 0) continue;
             String suffix = suffixForField(fNode);
-            Expression readObject = callX(varX(oin), "read" + suffix);
+            MethodCallExpression readObject = callX(varX(oin), "read" + suffix);
+            readObject.setImplicitThis(false);
             body.addStatement(assignS(varX(fNode), suffix.equals("Object") ? castX(GenericsUtils.nonGeneric(fNode.getType()), readObject) : readObject));
         }
         cNode.addMethod("readExternal", ACC_PUBLIC, ClassHelper.VOID_TYPE, params(oin), ClassNode.EMPTY_ARRAY, body);
     }
 
-    private String suffixForField(FieldNode fNode) {
+    private static String suffixForField(FieldNode fNode) {
         // use primitives for efficiency
         if (fNode.getType() == ClassHelper.int_TYPE) return "Int";
         if (fNode.getType() == ClassHelper.boolean_TYPE) return "Boolean";

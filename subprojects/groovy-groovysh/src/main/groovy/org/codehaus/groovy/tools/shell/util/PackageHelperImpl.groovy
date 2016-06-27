@@ -44,10 +44,18 @@ class PackageHelperImpl implements PreferenceChangeListener, PackageHelper {
 
     PackageHelperImpl(final ClassLoader groovyClassLoader=null) {
         this.groovyClassLoader = groovyClassLoader
-        if (! Boolean.valueOf(Preferences.get(IMPORT_COMPLETION_PREFERENCE_KEY))) {
-            rootPackages = initializePackages(groovyClassLoader)
-        }
+        initializePackages()
         Preferences.addChangeListener(this)
+    }
+
+    void reset() {
+        initializePackages()
+    }
+
+    private void initializePackages() {
+        if (! Boolean.valueOf(Preferences.get(IMPORT_COMPLETION_PREFERENCE_KEY))) {
+            rootPackages = getPackages(this.groovyClassLoader)
+        }
     }
 
     @Override
@@ -56,12 +64,12 @@ class PackageHelperImpl implements PreferenceChangeListener, PackageHelper {
             if (Boolean.valueOf(evt.getNewValue())) {
                 rootPackages = null
             } else if (rootPackages == null) {
-                rootPackages = initializePackages(groovyClassLoader)
+                initializePackages()
             }
         }
     }
 
-    static Map<String, CachedPackage> initializePackages(final ClassLoader groovyClassLoader) throws IOException {
+    private static Map<String, CachedPackage> getPackages(final ClassLoader groovyClassLoader) throws IOException {
         Map<String, CachedPackage> rootPackages = new HashMap()
         Set<URL> urls = new HashSet<URL>()
 
@@ -108,8 +116,9 @@ class PackageHelperImpl implements PreferenceChangeListener, PackageHelper {
             }
         }
         if (jigsaw) {
-            Set<String> jigsawPackages = getPackagesAndClassesFromJigsaw()
-            mergeNewPackages(jigsawPackages,URI.create("jrt:/").toURL(), rootPackages)
+            URL jigsawURL = URI.create("jrt:/").toURL()
+            Set<String> jigsawPackages = getPackagesAndClassesFromJigsaw(jigsawURL)  { isPackage, name -> isPackage && name }
+            mergeNewPackages(jigsawPackages, jigsawURL, rootPackages)
         }
         return rootPackages
     }
@@ -120,23 +129,26 @@ class PackageHelperImpl implements PreferenceChangeListener, PackageHelper {
      * to JDK 7+ when building the Groovysh module (uses nio2)
      * @return
      */
-    private static Set<String> getPackagesAndClassesFromJigsaw(Closure<Boolean> predicate = { isPackage, name -> isPackage && name }) {
+    private static Set<String> getPackagesAndClassesFromJigsaw(URL jigsawURL, Closure<Boolean> predicate) {
         def shell = new GroovyShell()
         shell.setProperty('predicate', predicate)
+        String jigsawURLString = jigsawURL.toString()
+        shell.setProperty('jigsawURLString', jigsawURLString)
         shell.evaluate '''import java.nio.file.*
 
-def fs = FileSystems.newFileSystem(URI.create("jrt:/"), [:])
+def fs = FileSystems.newFileSystem(URI.create(jigsawURLString), [:])
 
 result = [] as Set
 
 def filterPackageName(Path path) {
     def elems = "$path".split('/')
 
-    if (elems) {
+    if (elems && elems.length > 2) {
+        // remove e.g. 'modules/java.base/
         elems = elems[2..<elems.length]
 
         def name = elems.join('.')
-        if (predicate(true,name)) {
+        if (predicate(true, name)) {
             result << name
         }
     }
@@ -145,26 +157,26 @@ def filterPackageName(Path path) {
 def filterClassName(Path path) {
     def elems = "$path".split('/')
 
-    if (elems) {
+    if (elems && elems.length > 2) {
+        // remove e.g. 'modules/java.base/
         elems = elems[2..<elems.length]
 
         def name = elems.join('.')
         if (name.endsWith('.class')) {
-            name = name.substring(0,name.lastIndexOf('.'))
-            if (predicate(false,name)) {
+            name = name.substring(0, name.lastIndexOf('.'))
+            if (predicate(false, name)) {
                 result << name
             }
         }
     }
 }
 
-fs.rootDirectories.each {
-    Files.walkFileTree(it,
-            [preVisitDirectory: { dir, attrs -> filterPackageName(dir); FileVisitResult.CONTINUE },
-             visitFile: { file, attrs -> filterClassName(file); FileVisitResult.CONTINUE}
-            ]
-                    as SimpleFileVisitor)
-}
+// walk each file and directory, possibly storing directories as packages, and files as classes
+Files.walkFileTree(fs.getPath('modules'),
+        [preVisitDirectory: { dir, attrs -> filterPackageName(dir); FileVisitResult.CONTINUE },
+         visitFile: { file, attrs -> filterClassName(file); FileVisitResult.CONTINUE}
+        ]
+            as SimpleFileVisitor)
 '''
 
         Set<String> jigsawPackages = (Set<String>) shell.getProperty('result')
@@ -374,7 +386,7 @@ fs.rootDirectories.each {
         for (Iterator it = urls.iterator(); it.hasNext();) {
             URL url = (URL) it.next()
             if (url.protocol=='jrt') {
-                getPackagesAndClassesFromJigsaw { boolean isPackage, String name ->
+                getPackagesAndClassesFromJigsaw(url) { boolean isPackage, String name ->
                     !isPackage && name.startsWith(packagename)
                 }.collect(classes) { it - "${packagename}." }
             } else {

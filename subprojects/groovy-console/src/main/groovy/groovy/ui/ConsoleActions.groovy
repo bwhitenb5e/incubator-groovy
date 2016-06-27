@@ -193,7 +193,9 @@ clearOutputAction = action(
     name: 'Clear Output',
     closure: controller.&clearOutput,
     mnemonic: 'C',
-    accelerator: shortcut('W')
+    accelerator: shortcut('W'),
+    smallIcon: imageIcon(resource:'icons/clear.png', class:this),
+    shortDescription: 'Clear Output Area'
 )
 
 runAction = action(
@@ -382,4 +384,12 @@ commentAction = action(
     // Ctrl or Command + /
     accelerator: KeyStroke.getKeyStroke(KeyEvent.VK_SLASH, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()),
     shortDescription: 'Comment/Uncomment Selected Script'
+)
+
+selectBlockAction = action(
+    name: 'Select Block',
+    closure: controller.&selectBlock,
+    mnemonic: 'B',
+    accelerator: shortcut('B'),
+    shortDescription: 'Selects current Word, Line or Block in Script'
 )

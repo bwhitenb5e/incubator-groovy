@@ -75,11 +75,9 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
      */
     private static class ConstructedNestedClass extends ClassNode {
         ClassNode knownEnclosingType;
-        String nestClassName;
         public ConstructedNestedClass(ClassNode outer, String inner) {
             super(outer.getName()+"$"+(inner=replacePoints(inner)), Opcodes.ACC_PUBLIC,ClassHelper.OBJECT_TYPE);
             this.knownEnclosingType = outer;
-            this.nestClassName = inner;
             this.isPrimaryNode = false;
         }
         public boolean hasPackageName() {
@@ -139,7 +137,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
      * does for vanilla names starting with a lower case letter. The idea
      * that if we use a vanilla name with a lower case letter, that this
      * is in most cases no class. If it is a class the class needs to be
-     * imported explicitly. The efffect is that in an expression like
+     * imported explicitly. The effect is that in an expression like
      * "def foo = bar" we do not have to use a loadClass call to check the
      * name foo and bar for being classes. Instead we will ask the module
      * for an alias for this name which is much faster.
@@ -163,7 +161,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
             if (redirect()!=this) {
                 return super.setName(name);
             } else {
-                throw new GroovyBugError("ConstructedClassWithPackage#setName should not be called");
+                throw new GroovyBugError("LowerCaseClass#setName should not be called");
             }
         }
     }
@@ -391,7 +389,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
         return false;
     }
 
-    private String replaceLastPoint(String name) {
+    private static String replaceLastPoint(String name) {
         int lastPoint = name.lastIndexOf('.');
         name = new StringBuffer()
                 .append(name.substring(0, lastPoint))
@@ -716,7 +714,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
         return ret;
     }
 
-    private String lookupClassName(PropertyExpression pe) {
+    private static String lookupClassName(PropertyExpression pe) {
         boolean doInitialClassTest=true;
         String name = "";
         // this loop builds a name from right to left each name part
@@ -778,7 +776,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
     // this check will ignore a .class property, for Example Integer.class will be
     // a PropertyExpression with the ClassExpression of Integer as objectExpression
     // and class as property
-    private Expression correctClassClassChain(PropertyExpression pe) {
+    private static Expression correctClassClassChain(PropertyExpression pe) {
         LinkedList<Expression> stack = new LinkedList<Expression>();
         ClassExpression found = null;
         for (Expression it = pe; it != null; it = ((PropertyExpression) it).getObjectExpression()) {
@@ -947,12 +945,12 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
         return ve;
     }
 
-    private boolean testVanillaNameForClass(String name) {
+    private static boolean testVanillaNameForClass(String name) {
         if (name==null || name.length()==0) return false;
         return !Character.isLowerCase(name.charAt(0));
     }
 
-    private boolean isLeftSquareBracket(int op) {
+    private static boolean isLeftSquareBracket(int op) {
         return op == Types.ARRAY_EXPRESSION
                 || op == Types.LEFT_SQUARE_BRACKET
                 || op == Types.SYNTH_LIST
@@ -1062,7 +1060,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
         return ret;
     }
 
-    private String getDescription(ClassNode node) {
+    private static String getDescription(ClassNode node) {
         return (node.isInterface() ? "interface" : "class") + " '" + node.getName() + "'";
     }
     

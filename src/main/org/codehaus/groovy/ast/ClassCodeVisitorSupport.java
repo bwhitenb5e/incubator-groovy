@@ -43,8 +43,9 @@ import org.codehaus.groovy.ast.stmt.WhileStatement;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
 import org.codehaus.groovy.syntax.SyntaxException;
+import org.codehaus.groovy.transform.ErrorCollecting;
 
-public abstract class ClassCodeVisitorSupport extends CodeVisitorSupport implements GroovyClassVisitor {
+public abstract class ClassCodeVisitorSupport extends CodeVisitorSupport implements ErrorCollecting, GroovyClassVisitor {
 
     public void visitClass(ClassNode node) {
         visitAnnotations(node);
@@ -100,6 +101,11 @@ public abstract class ClassCodeVisitorSupport extends CodeVisitorSupport impleme
         }
     }
 
+    public void visitBlockStatement(BlockStatement block) {
+        visitStatement(block);
+        super.visitBlockStatement(block);
+    }
+
     protected void visitClassCodeContainer(Statement code) {
         if (code != null) code.visit(this);
     }
@@ -144,7 +150,7 @@ public abstract class ClassCodeVisitorSupport extends CodeVisitorSupport impleme
         if (init != null) init.visit(this);
     }
 
-    protected void addError(String msg, ASTNode expr) {
+    public void addError(String msg, ASTNode expr) {
         SourceUnit source = getSourceUnit();
         source.getErrorCollector().addErrorAndContinue(
                 new SyntaxErrorMessage(new SyntaxException(msg + '\n', expr.getLineNumber(), expr.getColumnNumber(), expr.getLastLineNumber(), expr.getLastColumnNumber()), source)
@@ -159,11 +165,6 @@ public abstract class ClassCodeVisitorSupport extends CodeVisitorSupport impleme
     public void visitAssertStatement(AssertStatement statement) {
         visitStatement(statement);
         super.visitAssertStatement(statement);
-    }
-
-    public void visitBlockStatement(BlockStatement block) {
-        visitStatement(block);
-        super.visitBlockStatement(block);
     }
 
     public void visitBreakStatement(BreakStatement statement) {

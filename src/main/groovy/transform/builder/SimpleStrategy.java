@@ -18,6 +18,7 @@
  */
 package groovy.transform.builder;
 
+import groovy.transform.Undefined;
 import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassNode;
@@ -49,7 +50,7 @@ import static org.codehaus.groovy.transform.BuilderASTTransformation.NO_EXCEPTIO
  * setter methods for properties return the original object, thus allowing chained usage of the setters.
  *
  * You use it as follows:
- * <pre>
+ * <pre class="groovyTestCase">
  * import groovy.transform.builder.*
  *
  * {@code @Builder}(builderStrategy=SimpleStrategy)
@@ -91,19 +92,25 @@ public class SimpleStrategy extends BuilderASTTransformation.AbstractBuilderStra
         if (unsupportedAttribute(transform, anno, "buildMethodName")) return;
         if (unsupportedAttribute(transform, anno, "builderMethodName")) return;
         if (unsupportedAttribute(transform, anno, "forClass")) return;
+        if (unsupportedAttribute(transform, anno, "includeSuperProperties")) return;
         boolean useSetters = transform.memberHasValue(anno, "useSetters", true);
+        boolean allNames = transform.memberHasValue(anno, "allNames", true);
 
         List<String> excludes = new ArrayList<String>();
         List<String> includes = new ArrayList<String>();
+        includes.add(Undefined.STRING);
         if (!getIncludeExclude(transform, anno, buildee, excludes, includes)) return;
+        if (includes.size() == 1 && Undefined.isUndefined(includes.get(0))) includes = null;
         String prefix = getMemberStringValue(anno, "prefix", "set");
-        List<FieldNode> fields = getInstancePropertyFields(buildee);
-        for (String name : includes) {
-            checkKnownField(transform, anno, name, fields);
+        List<FieldNode> fields = getFields(transform, anno, buildee);
+        if (includes != null) {
+            for (String name : includes) {
+                checkKnownField(transform, anno, name, fields);
+            }
         }
         for (FieldNode field : fields) {
             String fieldName = field.getName();
-            if (!AbstractASTTransformation.shouldSkip(fieldName, excludes, includes)) {
+            if (!AbstractASTTransformation.shouldSkipUndefinedAware(fieldName, excludes, includes, allNames)) {
                 String methodName = getSetterName(prefix, fieldName);
                 Parameter parameter = param(field.getType(), fieldName);
                 buildee.addMethod(methodName, Opcodes.ACC_PUBLIC, newClass(buildee), params(parameter), NO_EXCEPTIONS, block(
@@ -115,5 +122,10 @@ public class SimpleStrategy extends BuilderASTTransformation.AbstractBuilderStra
                 );
             }
         }
+    }
+
+    @Override
+    protected List<FieldNode> getFields(BuilderASTTransformation transform, AnnotationNode anno, ClassNode buildee) {
+        return getInstancePropertyFields(buildee);
     }
 }

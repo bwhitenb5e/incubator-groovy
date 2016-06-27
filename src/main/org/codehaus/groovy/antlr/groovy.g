@@ -204,8 +204,6 @@ import antlr.TokenStreamRecognitionException;
  *    o I have taken java.g for Java1.5 from Michael Studman (1.22.4)
  *      and have applied the groovy.diff from java.g (1.22) by John Rose
  *      back onto the new root (1.22.4) - Jeremy Rayner (Jan 2005)
- *    o for a map of the task see...
- *      http://groovy.javanicus.com/java-g.png
  *
  * Version 1.22.4.g.2
  *    o mkempf, rkleeb, Dec 2007
@@ -1104,7 +1102,7 @@ annotationDefinition![AST modifiers]  {Token first = cloneToken(LT(1));
                                           first.setLine(modifiers.getLine());
                                           first.setColumn(modifiers.getColumn());
                                       }}
-    :   AT "interface" IDENT
+    :   AT "interface" IDENT nls!
         // now parse the body of the annotation
         ab:annotationBlock
         {#annotationDefinition = #(create(ANNOTATION_DEF,"ANNOTATION_DEF",first,LT(1)),
@@ -1194,12 +1192,12 @@ enumConstants
     :
         enumConstant
         (    options {generateAmbigWarnings=false;} :
-            (nls (RCURLY | classField)) => { break; /* leave ()* loop */ }
+            (nls (SEMI! | RCURLY | classField)) => { break; /* leave ()* loop */ }
         |   nls! COMMA!
             (
-                (nls (RCURLY | classField)) => { break; /* leave ()* loop */ }
-            |
                 (nls annotationsOpt IDENT) => nls! enumConstant
+            |
+                (nls (SEMI! | RCURLY | classField)) => { break; /* leave ()* loop */ }
             )
         )*
     ;
@@ -2489,7 +2487,7 @@ namePart  {Token first = LT(1);}
 
 /*
  * Allowed keywords after dot (as a member name) and before colon (as a label).
- * Includes all Java keywords plus "in" and "as".
+ * Includes all Java keywords plus "as", "def", "in", and "trait".
  */
 keywordPropertyNames
     :   (
